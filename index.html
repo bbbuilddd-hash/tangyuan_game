@@ -3,15 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>一笔吃汤圆 - 全服排行版</title>
+    <title>一笔吃汤圆 - 可爱全服版</title>
+    
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
     <style>
         :root {
-            --bg-color: #ffccbc;
+            --bg-color: #ffccbc; /* 暖粉色背景 */
             --primary-color: #ff7043;
             --text-color: #5d4037;
             --grid-gap: 12px;
-            --cell-size: 50px;
+            --cell-size: 50px; 
         }
 
         * {
@@ -21,145 +23,500 @@
         }
 
         body {
-            margin: 0; padding: 0;
-            font-family: "Microsoft YaHei", sans-serif;
+            margin: 0;
+            padding: 0;
+            font-family: "Microsoft YaHei", "Heiti SC", sans-serif;
             background-color: var(--bg-color);
             background-image: radial-gradient(circle at 50% 0%, #ffab91 0%, #ffccbc 70%);
             color: var(--text-color);
-            height: 100vh; overflow: hidden;
-            display: flex; flex-direction: column; align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
-        /* 基础页面结构 */
-        .page { width: 100%; height: 100%; display: none; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 20px; }
-        .page.active { display: flex; animation: fadeIn 0.5s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        /* 页面容器 */
+        .page {
+            width: 100%;
+            height: 100%;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            padding: 20px;
+        }
 
-        .game-title { font-size: 2.2rem; color: #d84315; text-shadow: 2px 2px 0px #fff; margin-bottom: 10px; font-weight: 900; }
+        .page.active { display: flex; animation: fadeIn 0.5s ease; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 标题样式 */
+        .game-title {
+            font-size: 2.2rem;
+            color: #d84315;
+            text-shadow: 2px 2px 0px #fff;
+            margin-bottom: 10px;
+            font-weight: 900;
+            text-align: center;
+            letter-spacing: 2px;
+        }
 
         .btn {
-            background: #fff; border: 3px solid #ff7043; border-radius: 50px;
-            padding: 12px 40px; font-size: 1.3rem; color: #d84315; font-weight: bold;
-            margin: 10px; cursor: pointer; box-shadow: 0 4px 0 #ffab91; width: 80%; max-width: 280px; text-align: center;
+            background: #fff;
+            border: 3px solid #ff7043;
+            border-radius: 50px;
+            padding: 12px 40px;
+            font-size: 1.3rem;
+            color: #d84315;
+            font-weight: bold;
+            margin: 10px;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #ffab91;
+            transition: all 0.1s;
+            width: 80%;
+            max-width: 280px;
+            text-align: center;
+        }
+
+        .btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 0 #ffab91;
+        }
+
+        /* 游戏区域 */
+        .game-header {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 20px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #d84315;
+            background: rgba(255,255,255,0.6);
+            border-radius: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        /* 游戏提示文字 */
+        .game-tip {
+            font-size: 1rem;
+            color: #d84315;
+            background: rgba(255,255,255,0.7);
+            padding: 8px 20px;
+            border-radius: 15px;
+            margin-bottom: 10px;
+            font-weight: bold;
+            text-align: center;
         }
 
         .grid-container {
-            display: grid; gap: var(--grid-gap); background: rgba(255,255,255,0.5);
-            padding: 15px; border-radius: 20px; touch-action: none; position: relative;
+            display: grid;
+            gap: var(--grid-gap);
+            background: rgba(255,255,255,0.5);
+            padding: 15px;
+            border-radius: 20px;
+            touch-action: none; /* 禁止触摸滚动 */
+            box-shadow: 0 10px 20px rgba(216, 67, 21, 0.15);
+            position: relative;
+            max-width: 90vw; /* 限制网格最大宽度 */
+            overflow: hidden; /* 防止溢出 */
         }
 
-        /* 汤圆与障碍样式 */
-        .cell { width: var(--cell-size); height: var(--cell-size); border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative; background: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .cell.tangyuan::before { content: ''; position: absolute; width: 85%; height: 85%; background: #fff; border-radius: 50%; z-index: 1; }
-        .cell.egg::before { content: ''; position: absolute; width: 90%; height: 90%; background: #fff; border-radius: 45% 55% 50% 50% / 55% 45% 50% 50%; z-index: 1; }
-        .cell.egg::after { content: ''; position: absolute; width: 40%; height: 40%; background: #ffca28; border-radius: 50%; z-index: 2; }
+        .cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            transition: all 0.2s;
+            background: #fff;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
 
-        .cell.path { background: #ffcc80; transform: scale(1.15); z-index: 10; }
-        .cell.eaten { background: #fff9c4; opacity: 0.6; transform: scale(0.9); }
+        /* --- CSS 绘制可爱汤圆 --- */
+        .cell.tangyuan::before {
+            content: '';
+            position: absolute;
+            width: 85%;
+            height: 85%;
+            background: #fff;
+            border-radius: 50%;
+            z-index: 1;
+            box-shadow: inset -2px -2px 5px rgba(0,0,0,0.05);
+        }
+        /* 眼睛 */
+        .cell.tangyuan::after {
+            content: '';
+            position: absolute;
+            width: 5px;
+            height: 5px;
+            background: #333;
+            border-radius: 50%;
+            top: 38%;
+            left: 35%;
+            box-shadow: 12px 0 0 #333; /* 右眼 */
+            z-index: 2;
+        }
+        /* 嘴巴 */
+        .cell.tangyuan .mouth {
+            position: absolute;
+            width: 6px;
+            height: 3px;
+            border-bottom: 2px solid #ff5252;
+            border-radius: 50%;
+            top: 55%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2;
+        }
+        /* 腮红 */
+        .cell.tangyuan .blush {
+            position: absolute;
+            width: 8px;
+            height: 5px;
+            background: #ffab91;
+            border-radius: 50%;
+            top: 52%;
+            opacity: 0.7;
+            z-index: 1;
+        }
+        .cell.tangyuan .blush.left { left: 22%; }
+        .cell.tangyuan .blush.right { right: 22%; }
 
-        /* 弹窗与排行列表 */
-        .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255, 255, 255, 0.92); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(5px); }
+        /* --- CSS 绘制荷包蛋 (障碍) --- */
+        .cell.egg {
+            background: transparent;
+            box-shadow: none;
+            border: none;
+        }
+        .cell.egg::before {
+            content: '';
+            position: absolute;
+            width: 90%;
+            height: 90%;
+            background: #fff;
+            /* 不规则蛋白形状 */
+            border-radius: 45% 55% 50% 50% / 55% 45% 50% 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 1;
+            transform: rotate(15deg);
+        }
+        .cell.egg::after {
+            content: '';
+            position: absolute;
+            width: 40%;
+            height: 40%;
+            background: #ffca28;
+            border-radius: 50%;
+            top: 30%;
+            left: 30%;
+            z-index: 2;
+            box-shadow: inset 2px 2px 4px rgba(0,0,0,0.1);
+            transform: rotate(-15deg);
+        }
+
+        /* 路径状态 */
+        .cell.path {
+            background: #ffcc80; /* 选中变黄 */
+            transform: scale(1.15);
+            z-index: 10;
+            box-shadow: 0 0 10px rgba(255, 160, 0, 0.6);
+        }
+        .cell.eaten {
+            background: #fff9c4; /* 吃过变浅黄 */
+            opacity: 0.6;
+            transform: scale(0.9);
+        }
+        /* 吃过的汤圆隐藏五官 */
+        .cell.eaten::after, 
+        .cell.eaten .mouth, 
+        .cell.eaten .blush {
+            display: none;
+        }
+        .cell.eaten::before {
+            background: #fff9c4;
+        }
+
+        /* 弹窗通用样式 */
+        .modal {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255, 255, 255, 0.92);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            text-align: center;
+            backdrop-filter: blur(5px);
+        }
         .modal.show { display: flex; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        .rank-list { width: 90%; max-width: 350px; background: #fff; border-radius: 15px; padding: 10px; max-height: 50vh; overflow-y: auto; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-        .rank-item { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px dashed #ffccbc; }
 
-        #player-name { width: 80%; max-width: 280px; padding: 12px 20px; border: 3px solid #ff7043; border-radius: 50px; font-size: 1.2rem; margin: 20px 0; text-align: center; outline: none; }
+        @keyframes popIn {
+            from { transform: scale(0.5); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .modal h2 { color: #d84315; font-size: 2rem; margin: 0 0 10px 0; }
+        .modal p { font-size: 1.2rem; color: #5d4037; }
+        
+        .big-emoji { font-size: 5rem; margin: 20px 0; animation: bounce 1s infinite; }
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+
+        /* 排行榜表格 */
+        .rank-list {
+            width: 90%;
+            max-width: 350px;
+            background: #fff;
+            border-radius: 15px;
+            padding: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        .rank-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px;
+            border-bottom: 1px dashed #ffccbc;
+            font-size: 1rem;
+        }
+        .rank-item:first-child { color: #ffca28; font-weight: bold; text-shadow: 0 0 2px #d84315; } 
+        .rank-item:nth-child(2) { color: #9e9e9e; font-weight: bold; }
+        .rank-item:nth-child(3) { color: #ff7043; font-weight: bold; }
+
+        /* 姓名输入弹窗样式 */
+        #name-modal input {
+            width: 80%;
+            max-width: 280px;
+            padding: 12px 20px;
+            border: 3px solid #ff7043;
+            border-radius: 50px;
+            font-size: 1.2rem;
+            color: #5d4037;
+            margin: 20px 0;
+            text-align: center;
+            outline: none;
+        }
+        #name-modal input::placeholder {
+            color: #ffab91;
+        }
+
     </style>
 </head>
 <body>
 
     <div id="home-page" class="page active">
-        <div style="font-size: 5rem; margin-bottom: 10px;">🍡</div>
+        <div class="big-emoji">🍡</div>
         <h1 class="game-title">一笔吃汤圆</h1>
+        <p style="color: #d84315; margin-bottom: 30px; font-size: 1.1rem;">避开煎蛋 🍳，连完所有汤圆！</p>
+        
         <div class="btn" id="btn-start">开始挑战</div>
         <div class="btn" id="btn-rank" style="background: #ffccbc; border-color: #d84315;">排行榜</div>
     </div>
 
     <div id="game-page" class="page">
-        <div style="display:flex; justify-content:space-between; width:100%; padding:10px 20px; color:#d84315; font-weight:bold; background: rgba(255,255,255,0.6); border-radius: 20px; margin-bottom: 15px;">
+        <div class="game-header">
             <span id="level-info">第 1/5 关</span>
             <span id="timer">0.00s</span>
         </div>
-        <div id="grid" class="grid-container"></div>
-        <p style="color:#d84315; margin-top:15px; background: rgba(255,255,255,0.5); padding: 5px 15px; border-radius: 10px;">剩余汤圆：<span id="remaining" style="font-weight:bold; font-size: 1.1rem;">0</span></p>
+        
+        <div class="game-tip">避开煎蛋，一笔连接所有汤圆</div>
+        
+        <div style="margin-bottom: 10px; font-size: 0.9rem; color: #d84315; background: rgba(255,255,255,0.5); padding: 5px 15px; border-radius: 10px;">
+            剩余汤圆：<span id="remaining" style="font-weight: bold; font-size: 1.1rem;">0</span>
+        </div>
+
+        <div id="grid" class="grid-container">
+            </div>
     </div>
 
-    <div id="name-modal" class="modal">
-        <div style="font-size: 4rem;">✏️</div>
-        <h2 style="color: #d84315;">输入吃货名称</h2>
-        <input type="text" id="player-name" placeholder="比如：小汤圆" maxlength="10">
-        <div class="btn" id="btn-confirm-name">确认开始</div>
+    <div id="modal-win" class="modal">
+        <div class="big-emoji">😋</div>
+        <h2>太好吃啦！</h2>
+        <p id="win-msg">本关用时 3.5s</p>
+        <div class="btn" id="btn-next">下一关</div>
     </div>
 
     <div id="modal-final" class="modal">
-        <div style="font-size: 4rem;">🏆</div>
-        <h2 style="color: #d84315;">全关卡通关！</h2>
-        <p style="color: #5d4037; font-size: 1.2rem;">总用时：<span id="final-time" style="color:#d84315; font-size:1.5rem; font-weight:bold;"></span></p>
+        <div class="big-emoji">🏆</div>
+        <h2>挑战成功！</h2>
+        <p>总用时：<span id="final-time" style="color: #d84315; font-weight: bold; font-size: 1.5rem;">0s</span></p>
         <div class="btn" id="btn-submit">提交成绩</div>
     </div>
 
+    <div id="name-modal" class="modal">
+        <div class="big-emoji">✏️</div>
+        <h2>请输入您的姓名</h2>
+        <input type="text" id="player-name" placeholder="比如：吃货小汤圆" maxlength="10">
+        <div class="btn" id="btn-confirm-name">确认开始</div>
+    </div>
+
     <div id="rank-page" class="page">
-        <h2 class="game-title">🏅 全服前十</h2>
-        <div class="rank-list" id="rank-container"></div>
+        <h2 class="game-title">🏅 吃货排行榜</h2>
+        <div class="rank-list" id="rank-container">
+            </div>
         <div class="btn" id="btn-back">返回首页</div>
     </div>
 
     <script>
-        // === 这里的两行请换成你自己的 Supabase 数据！ ===
+        // ==========================================
+        //  配置您的 Supabase 云端数据库
+        // ==========================================
         const SUPABASE_URL = 'https://qnjhnzddnweuhzmyxyod.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFuamhuemRkbndldWh6bXl4eW9kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwOTQ5MjksImV4cCI6MjA4NzY3MDkyOX0.WYGj5lYF0Zt56izo51TzH6bRMB5Tp2yCVD3Jy2lV3bA';
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        let supabaseClient = null;
+        try {
+            // 防崩溃保护：如果还没填对 URL，游戏还能照常本地玩
+            if (SUPABASE_URL.startsWith('http')) {
+                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            } else {
+                console.warn("未检测到有效的 Supabase 配置，现在是单机模式！");
+            }
+        } catch (e) {
+            console.error("数据库初始化失败", e);
+        }
 
+        // --- 关卡配置 (0: 汤圆，1: 煎蛋障碍) ---
         const levels = [
-            { rows: 3, cols: 3, map: [[0,0,0],[0,0,0],[0,0,1]] },
-            { rows: 4, cols: 4, map: [[0,0,0,0],[0,1,0,0],[0,0,0,0],[0,0,0,0]] },
-            { rows: 4, cols: 5, map: [[0,0,1,0,0],[0,0,1,0,0],[0,0,0,0,0],[0,0,0,0,0]] },
-            { rows: 5, cols: 5, map: [[0,0,0,1,0],[0,1,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]] },
-            { rows: 5, cols: 6, map: [[0,0,0,0,0,0],[0,0,1,0,1,0],[0,0,0,0,0,0],[0,1,0,0,0,0],[0,0,0,0,0,0]] }
+            { rows: 3, cols: 3, map: [ [0, 0, 0], [0, 0, 0], [0, 0, 1] ] },
+            { rows: 4, cols: 4, map: [ [0, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0] ] },
+            { rows: 4, cols: 5, map: [ [0, 0, 1, 0, 0], [0, 0, 1, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0] ] },
+            { rows: 5, cols: 5, map: [ [0, 0, 0, 1, 0], [0, 1, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0] ] },
+            { rows: 5, cols: 6, map: [ [0, 0, 0, 0, 0, 0], [0, 0, 1, 0, 1, 0], [0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0] ] }
         ];
 
-        let currentLevel = 0, totalTime = 0, startTime = 0, timerInterval = null, playerName = '', path = [], isDrawing = false, totalTangyuanCount = 0;
+        let currentLevel = 0;
+        let totalTime = 0;
+        let startTime = 0;
+        let timerInterval = null;
+        let playerName = '';
+        let path = [];
+        let isDrawing = false;
+        let totalTangyuanCount = 0;
 
-        function showPage(id) {
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById(id + '-page').classList.add('active');
+        // DOM
+        const pages = {
+            home: document.getElementById('home-page'),
+            game: document.getElementById('game-page'),
+            rank: document.getElementById('rank-page')
+        };
+        const modals = {
+            win: document.getElementById('modal-win'),
+            final: document.getElementById('modal-final'),
+            name: document.getElementById('name-modal')
+        };
+        const gridEl = document.getElementById('grid');
+        const timerEl = document.getElementById('timer');
+        const remainingEl = document.getElementById('remaining');
+        const levelInfoEl = document.getElementById('level-info');
+        const playerNameInput = document.getElementById('player-name');
+
+        // --- 导航 ---
+        function showPage(name) {
+            Object.values(pages).forEach(p => p.classList.remove('active'));
+            pages[name].classList.add('active');
+        }
+
+        function showModal(name) {
+            modals[name].classList.add('show');
+        }
+
+        function hideModals() {
+            Object.values(modals).forEach(m => m.classList.remove('show'));
+        }
+
+        // --- 游戏核心 ---
+        function showNameModal() {
+            playerNameInput.value = '';
+            showModal('name');
+        }
+
+        function startGame() {
+            currentLevel = 0;
+            totalTime = 0;
+            loadLevel(0);
         }
 
         function loadLevel(idx) {
-            currentLevel = idx; path = []; isDrawing = false; totalTangyuanCount = 0;
+            currentLevel = idx;
             const config = levels[idx];
-            document.getElementById('level-info').textContent = `第 ${idx + 1}/${levels.length} 关`;
+            
+            // 重置
+            path = [];
+            isDrawing = false;
+            totalTangyuanCount = 0;
+            
+            // UI
+            levelInfoEl.textContent = `第 ${idx + 1}/${levels.length} 关`;
+            hideModals();
+            showPage('game');
+            
+            // 渲染网格
             renderGrid(config);
             startTimer();
-            showPage('game');
         }
 
         function renderGrid(config) {
-            const gridEl = document.getElementById('grid');
             gridEl.innerHTML = '';
             gridEl.style.gridTemplateColumns = `repeat(${config.cols}, var(--cell-size))`;
-            config.map.forEach((row, r) => {
-                row.forEach((type, c) => {
+            
+            for(let r=0; r<config.rows; r++) {
+                for(let c=0; c<config.cols; c++) {
+                    const type = config.map[r][c];
                     const cell = document.createElement('div');
-                    cell.className = 'cell ' + (type === 0 ? 'tangyuan' : 'egg');
-                    cell.dataset.r = r; cell.dataset.c = c;
-                    if(type === 0) {
+                    cell.className = 'cell';
+                    cell.dataset.r = r;
+                    cell.dataset.c = c;
+                    if (type === 0) {
+                        cell.classList.add('tangyuan');
+                        const mouth = document.createElement('div');
+                        mouth.className = 'mouth';
+                        const blushL = document.createElement('div');
+                        blushL.className = 'blush left';
+                        const blushR = document.createElement('div');
+                        blushR.className = 'blush right';
+                        cell.appendChild(mouth);
+                        cell.appendChild(blushL);
+                        cell.appendChild(blushR);
+                        
                         totalTangyuanCount++;
                         cell.addEventListener('mousedown', onInputStart);
                         cell.addEventListener('touchstart', onInputStart, {passive: false});
+                    } else {
+                        cell.classList.add('egg');
                     }
                     gridEl.appendChild(cell);
-                });
-            });
-            document.getElementById('remaining').textContent = totalTangyuanCount;
+                }
+            }
+            updateRemaining();
         }
 
+        // --- 输入处理 ---
         function onInputStart(e) {
             if (e.type === 'touchstart') e.preventDefault();
+            if (isDrawing) return;
+
             const target = e.target.closest('.cell');
-            if (!target || target.classList.contains('egg')) return;
-            isDrawing = true; path = [{ r: parseInt(target.dataset.r), c: parseInt(target.dataset.c) }];
+            if (!target) return;
+
+            const r = parseInt(target.dataset.r);
+            const c = parseInt(target.dataset.c);
+            if (levels[currentLevel].map[r][c] !== 0) return;
+            isDrawing = true;
+            path = [{r, c}];
             updateVisuals();
+
             document.addEventListener('mousemove', onInputMove);
             document.addEventListener('touchmove', onInputMove, {passive: false});
             document.addEventListener('mouseup', onInputEnd);
@@ -168,88 +525,238 @@
 
         function onInputMove(e) {
             if (!isDrawing) return;
-            const x = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
-            const y = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
-            const el = document.elementFromPoint(x, y);
-            if (el && el.classList.contains('cell')) {
-                const r = parseInt(el.dataset.r), c = parseInt(el.dataset.c);
-                const last = path[path.length - 1];
-                if (last.r === r && last.c === c) return;
-                if (Math.abs(last.r - r) + Math.abs(last.c - c) !== 1) return;
-                if (levels[currentLevel].map[r][c] === 1) { path = []; isDrawing = false; updateVisuals(); return; }
-                const idx = path.findIndex(p => p.r === r && p.c === c);
-                if (idx !== -1) path = path.slice(0, idx + 1);
-                else path.push({r, c});
+            if (e.type === 'touchmove') e.preventDefault();
+
+            let x, y;
+            if (e.type === 'touchmove') {
+                x = e.touches[0].clientX;
+                y = e.touches[0].clientY;
+            } else {
+                x = e.clientX;
+                y = e.clientY;
+            }
+
+            const el = document.elementFromPoint(x - window.scrollX, y - window.scrollY);
+            if (!el || !el.classList.contains('cell')) return;
+
+            const r = parseInt(el.dataset.r);
+            const c = parseInt(el.dataset.c);
+
+            addToPath(r, c);
+        }
+
+        function onInputEnd() {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            try {
+                document.removeEventListener('mousemove', onInputMove);
+                document.removeEventListener('touchmove', onInputMove);
+                document.removeEventListener('mouseup', onInputEnd);
+                document.removeEventListener('touchend', onInputEnd);
+            } catch (e) {}
+
+            checkWin();
+        }
+
+        function addToPath(r, c) {
+            const last = path[path.length - 1];
+            if (last.r === r && last.c === c) return;
+
+            const dr = Math.abs(last.r - r);
+            const dc = Math.abs(last.c - c);
+            if (dr + dc !== 1) return;
+            
+            const existingIndex = path.findIndex(p => p.r === r && p.c === c);
+            if (existingIndex !== -1) {
+                path = path.slice(0, existingIndex + 1);
+                updateVisuals();
+                return;
+            }
+
+            if (levels[currentLevel].map[r][c] === 1) {
+                path = [];
+                updateVisuals();
+                gridEl.style.transform = "translateX(5px)";
+                setTimeout(() => gridEl.style.transform = "translateX(0)", 100);
+                return;
+            }
+
+            path.push({r, c});
+            updateVisuals();
+        }
+
+        function updateVisuals() {
+            document.querySelectorAll('.cell').forEach(cell => {
+                cell.classList.remove('path', 'eaten');
+            });
+            path.forEach((p, index) => {
+                const cell = document.querySelector(`.cell[data-r="${p.r}"][data-c="${p.c}"]`);
+                if (cell) {
+                    if (index === path.length - 1) {
+                        cell.classList.add('path'); 
+                    } else {
+                        cell.classList.add('eaten'); 
+                    }
+                }
+             });
+            updateRemaining();
+        }
+
+        function updateRemaining() {
+            const unique = new Set(path.map(p => `${p.r},${p.c}`));
+            const eaten = unique.size;
+            remainingEl.textContent = Math.max(0, totalTangyuanCount - eaten);
+        }
+
+        function checkWin() {
+            const unique = new Set(path.map(p => `${p.r},${p.c}`));
+            if (unique.size === totalTangyuanCount) {
+                stopTimer();
+                const levelTime = (Date.now() - startTime) / 1000;
+                totalTime += levelTime;
+                if (currentLevel < levels.length - 1) {
+                    document.getElementById('win-msg').textContent = `本关用时 ${levelTime.toFixed(2)}s`;
+                    document.getElementById('btn-next').textContent = "下一关";
+                    document.getElementById('btn-next').onclick = () => loadLevel(currentLevel + 1);
+                    showModal('win');
+                } else {
+                    document.getElementById('final-time').textContent = totalTime.toFixed(2) + 's';
+                    showModal('final');
+                }
+            } else {
+                path = [];
                 updateVisuals();
             }
         }
 
-        function onInputEnd() {
-            isDrawing = false;
-            document.removeEventListener('mousemove', onInputMove);
-            document.removeEventListener('touchmove', onInputMove);
-            if (new Set(path.map(p => `${p.r},${p.c}`)).size === totalTangyuanCount) {
-                stopTimer();
-                totalTime += (Date.now() - startTime) / 1000;
-                if (currentLevel < levels.length - 1) loadLevel(currentLevel + 1);
-                else {
-                    document.getElementById('final-time').textContent = totalTime.toFixed(2) + 's';
-                    document.getElementById('modal-final').classList.add('show');
-                }
-            } else { path = []; updateVisuals(); }
+        // --- 计时器 ---
+        function startTimer() {
+            startTime = Date.now();
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                const t = (Date.now() - startTime) / 1000;
+                timerEl.textContent = t.toFixed(2) + 's';
+            }, 50);
         }
 
-        function updateVisuals() {
-            document.querySelectorAll('.cell').forEach(c => c.classList.remove('path', 'eaten'));
-            path.forEach((p, i) => {
-                const el = document.querySelector(`.cell[data-r="${p.r}"][data-c="${p.c}"]`);
-                if (el) el.classList.add(i === path.length - 1 ? 'path' : 'eaten');
-            });
-            document.getElementById('remaining').textContent = Math.max(0, totalTangyuanCount - path.length);
+        function stopTimer() {
+            clearInterval(timerInterval);
         }
 
+        // ==========================================
+        //  云端排行榜核心逻辑修改
+        // ==========================================
         async function submitScore() {
-            const btn = document.getElementById('btn-submit');
-            btn.textContent = "上传中..."; btn.style.pointerEvents = "none";
-            const { error } = await supabase.from('leaderboard').insert([{ name: playerName, time: parseFloat(totalTime.toFixed(2)) }]);
-            if (error) {
-                alert("上传失败，请检查 Supabase 配置是否正确！\n错误信息: " + error.message);
-            } else { 
-                await renderRank(); 
-                showPage('rank'); 
-                document.getElementById('modal-final').classList.remove('show'); 
+            if (!playerName) playerName = '匿名玩家';
+            
+            const btnSubmit = document.getElementById('btn-submit');
+            
+            // 没连数据库，提示一下，然后只在本地模拟展示
+            if (!supabaseClient) {
+                alert("当前未连接数据库（您还没配置URL和Key），成绩将不会被全服记录哦~");
+                hideModals();
+                showPage('rank');
+                return;
             }
-            btn.textContent = "提交成绩"; btn.style.pointerEvents = "auto";
+
+            btnSubmit.textContent = "上传成绩中...";
+            btnSubmit.style.pointerEvents = "none";
+
+            try {
+                const { error } = await supabaseClient
+                    .from('leaderboard')
+                    .insert([{ name: playerName, time: parseFloat(totalTime.toFixed(2)) }]);
+                
+                if (error) {
+                    alert("云端记录失败：" + error.message);
+                } else {
+                    // 提交成功后拉取最新榜单
+                    await renderRank();
+                    hideModals();
+                    showPage('rank');
+                }
+            } catch (err) {
+                alert("网络问题或配置错误，提交失败！");
+            } finally {
+                btnSubmit.textContent = "提交成绩";
+                btnSubmit.style.pointerEvents = "auto";
+            }
         }
 
         async function renderRank() {
             const container = document.getElementById('rank-container');
-            container.innerHTML = '<p style="text-align:center; color: #d84315;">正在加载全服榜单...</p>';
-            const { data, error } = await supabase.from('leaderboard').select('*').order('time', { ascending: true }).limit(10);
-            if (error) {
-                container.innerHTML = '<p style="text-align:center; color: red;">加载失败，请检查数据库配置</p>';
-            } else {
-                container.innerHTML = data.map((item, i) => `
-                    <div class="rank-item">
-                        <span style="color: ${i<3 ? '#d84315' : '#5d4037'}; font-weight: ${i<3 ? 'bold' : 'normal'};">${i+1}. ${item.name}</span>
-                        <span style="color: #ff7043; font-weight: bold;">${item.time.toFixed(2)}s</span>
-                    </div>
-                `).join('') || '<p style="text-align:center; color: #9e9e9e;">暂无记录，快来抢占沙发！</p>';
+            
+            if (!supabaseClient) {
+                container.innerHTML = '<div class="rank-item" style="justify-content: center;">未连接数据库，无法加载</div>';
+                return;
+            }
+
+            container.innerHTML = '<div class="rank-item" style="justify-content: center;">拉取全服数据中...</div>';
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('leaderboard')
+                    .select('*')
+                    .order('time', { ascending: true })
+                    .limit(10);
+                
+                container.innerHTML = '';
+                
+                if (error || !data || data.length === 0) {
+                    container.innerHTML = '<div class="rank-item" style="justify-content: center;">暂无成绩记录</div>';
+                    return;
+                }
+
+                data.forEach((item, i) => {
+                    // 解析时间（如果表中没有 created_at，默认显示今天日期）
+                    let dateStr = "";
+                    if (item.created_at) {
+                        const date = new Date(item.created_at);
+                        dateStr = `${date.getMonth()+1}-${date.getDate()}`;
+                    } else {
+                        const now = new Date();
+                        dateStr = `${now.getMonth()+1}-${now.getDate()}`;
+                    }
+
+                    const div = document.createElement('div');
+                    div.className = 'rank-item';
+                    div.innerHTML = `
+                        <span>${i+1}. ${item.name} (${dateStr})</span>
+                        <span>${item.time.toFixed(2)}s</span>
+                    `;
+                    container.appendChild(div);
+                });
+            } catch (err) {
+                container.innerHTML = '<div class="rank-item" style="justify-content: center;">数据拉取失败</div>';
             }
         }
 
-        function startTimer() { startTime = Date.now(); timerInterval = setInterval(() => { document.getElementById('timer').textContent = ((Date.now() - startTime) / 1000).toFixed(2) + 's'; }, 50); }
-        function stopTimer() { clearInterval(timerInterval); }
+        // --- 事件绑定 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('btn-start').addEventListener('click', showNameModal);
+            
+            document.getElementById('btn-confirm-name').addEventListener('click', () => {
+                const name = playerNameInput.value.trim();
+                if (!name) {
+                    alert('请输入您的姓名！');
+                    return;
+                }
+                playerName = name;
+                hideModals();
+                startGame();
+            });
 
-        document.getElementById('btn-start').onclick = () => document.getElementById('name-modal').classList.add('show');
-        document.getElementById('btn-confirm-name').onclick = () => {
-            playerName = document.getElementById('player-name').value.trim() || "匿名吃货";
-            document.getElementById('name-modal').classList.remove('show');
-            totalTime = 0; loadLevel(0);
-        };
-        document.getElementById('btn-rank').onclick = () => { renderRank(); showPage('rank'); };
-        document.getElementById('btn-submit').onclick = submitScore;
-        document.getElementById('btn-back').onclick = () => showPage('home');
+            // 点击排行榜时，异步拉取数据
+            document.getElementById('btn-rank').addEventListener('click', async () => {
+                showPage('rank');
+                await renderRank();
+            });
+            
+            document.getElementById('btn-submit').addEventListener('click', submitScore);
+            document.getElementById('btn-back').addEventListener('click', () => showPage('home'));
+        });
+
     </script>
 </body>
 </html>
