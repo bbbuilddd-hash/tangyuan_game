@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>一笔吃汤圆 - 可爱全服版</title>
     
-    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
     <style>
         :root {
@@ -368,24 +367,26 @@
         <div class="btn" id="btn-back">返回首页</div>
     </div>
 
+    
     <script>
         // ==========================================
-        //  配置您的 Supabase 云端数据库
+        //  云端 / 本地 双保险配置
+        //  说明：
+        //  1) 不再依赖 head 里的第三方 CDN 脚本，降低 iPhone / Safari 首屏加载失败概率
+        //  2) 云端排行榜走 Supabase REST API
+        //  3) 云端失败时自动回退到本地排行榜，游戏本体不受影响
         // ==========================================
         const SUPABASE_URL = 'https://qnjhnzddnweuhzmyxyod.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFuamhuemRkbndldWh6bXl4eW9kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwOTQ5MjksImV4cCI6MjA4NzY3MDkyOX0.WYGj5lYF0Zt56izo51TzH6bRMB5Tp2yCVD3Jy2lV3bA';
-        
-        let supabaseClient = null;
-        try {
-            // 防崩溃保护：如果还没填对 URL，游戏还能照常本地玩
-            if (SUPABASE_URL.startsWith('http')) {
-                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            } else {
-                console.warn("未检测到有效的 Supabase 配置，现在是单机模式！");
-            }
-        } catch (e) {
-            console.error("数据库初始化失败", e);
-        }
+        const LEADERBOARD_TABLE = 'leaderboard';
+        const LOCAL_SCORE_KEY = 'tangyuan_local_leaderboard_v1';
+        const FETCH_TIMEOUT_MS = 6000;
+
+        const CLOUD_AVAILABLE =
+            typeof SUPABASE_URL === 'string' &&
+            typeof SUPABASE_KEY === 'string' &&
+            /^https:\/\//.test(SUPABASE_URL) &&
+            SUPABASE_KEY.length > 20;
 
         // --- 关卡配置 (0: 汤圆，1: 煎蛋障碍) ---
         const levels = [
@@ -404,6 +405,8 @@
         let path = [];
         let isDrawing = false;
         let totalTangyuanCount = 0;
+        let rankMode = 'cloud';
+        let activePointerId = null;
 
         // DOM
         const pages = {
@@ -421,6 +424,142 @@
         const remainingEl = document.getElementById('remaining');
         const levelInfoEl = document.getElementById('level-info');
         const playerNameInput = document.getElementById('player-name');
+
+        function createRequestOptions(method, body) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+            return {
+                timeoutId,
+                options: {
+                    method,
+                    signal: controller.signal,
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: body ? JSON.stringify(body) : undefined
+                }
+            };
+        }
+
+        async function restInsertScore(name, time) {
+            if (!CLOUD_AVAILABLE) {
+                throw new Error('云端未配置');
+            }
+
+            const { timeoutId, options } = createRequestOptions('POST', [
+                { name, time: Number(time.toFixed(2)) }
+            ]);
+
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/${LEADERBOARD_TABLE}`, {
+                    ...options,
+                    headers: {
+                        ...options.headers,
+                        'Prefer': 'return=minimal'
+                    }
+                });
+
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || `HTTP ${response.status}`);
+                }
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
+        async function restFetchScores(limit = 10) {
+            if (!CLOUD_AVAILABLE) {
+                throw new Error('云端未配置');
+            }
+
+            const { timeoutId, options } = createRequestOptions('GET');
+
+            try {
+                const response = await fetch(
+                    `${SUPABASE_URL}/rest/v1/${LEADERBOARD_TABLE}?select=*&order=time.asc&limit=${limit}`,
+                    options
+                );
+
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                return Array.isArray(data) ? data : [];
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
+        function getLocalScores() {
+            try {
+                const raw = localStorage.getItem(LOCAL_SCORE_KEY);
+                const data = raw ? JSON.parse(raw) : [];
+                return Array.isArray(data) ? data : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveLocalScore(name, time) {
+            const scores = getLocalScores();
+            scores.push({
+                name,
+                time: Number(time.toFixed(2)),
+                created_at: new Date().toISOString(),
+                source: 'local'
+            });
+
+            scores.sort((a, b) => a.time - b.time);
+            localStorage.setItem(LOCAL_SCORE_KEY, JSON.stringify(scores.slice(0, 20)));
+        }
+
+        function formatDateText(value) {
+            const date = value ? new Date(value) : new Date();
+            if (Number.isNaN(date.getTime())) return '';
+            return `${date.getMonth() + 1}-${date.getDate()}`;
+        }
+
+        function renderRankList(items, mode = 'cloud') {
+            const container = document.getElementById('rank-container');
+            container.innerHTML = '';
+
+            if (!items.length) {
+                const empty = document.createElement('div');
+                empty.className = 'rank-item';
+                empty.style.justifyContent = 'center';
+                empty.textContent = mode === 'local' ? '本地暂无成绩记录' : '暂无成绩记录';
+                container.appendChild(empty);
+                return;
+            }
+
+            items.forEach((item, i) => {
+                const div = document.createElement('div');
+                div.className = 'rank-item';
+                const dateStr = formatDateText(item.created_at);
+                const sourceTag = mode === 'local' ? '本地' : dateStr;
+                div.innerHTML = `
+                    <span>${i + 1}. ${escapeHtml(item.name || '匿名玩家')} (${sourceTag})</span>
+                    <span>${Number(item.time || 0).toFixed(2)}s</span>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[ch]));
+        }
 
         // --- 导航 ---
         function showPage(name) {
@@ -451,35 +590,53 @@
         function loadLevel(idx) {
             currentLevel = idx;
             const config = levels[idx];
-            
+
             // 重置
             path = [];
             isDrawing = false;
+            activePointerId = null;
             totalTangyuanCount = 0;
-            
+
             // UI
             levelInfoEl.textContent = `第 ${idx + 1}/${levels.length} 关`;
             hideModals();
             showPage('game');
-            
+
             // 渲染网格
             renderGrid(config);
             startTimer();
         }
 
+        function updateCellSize(config) {
+            const vw = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
+            const vh = Math.min(window.innerHeight, document.documentElement.clientHeight || window.innerHeight);
+            const horizontalPadding = 70;
+            const verticalReserve = 280;
+            const gap = 12;
+
+            const maxCellByWidth = Math.floor((vw - horizontalPadding - gap * (config.cols - 1)) / config.cols);
+            const maxCellByHeight = Math.floor((vh - verticalReserve - gap * (config.rows - 1)) / config.rows);
+            const safeCell = Math.max(36, Math.min(56, maxCellByWidth, maxCellByHeight));
+
+            document.documentElement.style.setProperty('--cell-size', `${safeCell}px`);
+        }
+
         function renderGrid(config) {
+            updateCellSize(config);
             gridEl.innerHTML = '';
             gridEl.style.gridTemplateColumns = `repeat(${config.cols}, var(--cell-size))`;
-            
-            for(let r=0; r<config.rows; r++) {
-                for(let c=0; c<config.cols; c++) {
+
+            for (let r = 0; r < config.rows; r++) {
+                for (let c = 0; c < config.cols; c++) {
                     const type = config.map[r][c];
                     const cell = document.createElement('div');
                     cell.className = 'cell';
                     cell.dataset.r = r;
                     cell.dataset.c = c;
+
                     if (type === 0) {
                         cell.classList.add('tangyuan');
+
                         const mouth = document.createElement('div');
                         mouth.className = 'mouth';
                         const blushL = document.createElement('div');
@@ -489,84 +646,121 @@
                         cell.appendChild(mouth);
                         cell.appendChild(blushL);
                         cell.appendChild(blushR);
-                        
+
                         totalTangyuanCount++;
-                        cell.addEventListener('mousedown', onInputStart);
-                        cell.addEventListener('touchstart', onInputStart, {passive: false});
                     } else {
                         cell.classList.add('egg');
                     }
+
                     gridEl.appendChild(cell);
                 }
             }
+
             updateRemaining();
         }
 
-        // --- 输入处理 ---
-        function onInputStart(e) {
-            if (e.type === 'touchstart') e.preventDefault();
-            if (isDrawing) return;
+        function getCellFromPoint(x, y) {
+            const el = document.elementFromPoint(x, y);
+            return el && el.closest ? el.closest('.cell') : null;
+        }
 
+        function startDrawFromCell(cell) {
+            if (!cell) return;
+
+            const r = parseInt(cell.dataset.r, 10);
+            const c = parseInt(cell.dataset.c, 10);
+            if (levels[currentLevel].map[r][c] !== 0) return;
+
+            isDrawing = true;
+            path = [{ r, c }];
+            updateVisuals();
+        }
+
+        // --- 输入处理：优先 Pointer Events，老环境回退 Touch / Mouse ---
+        function onPointerDown(e) {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            const target = e.target.closest('.cell');
+            if (!target || isDrawing) return;
+
+            e.preventDefault();
+            activePointerId = e.pointerId;
+            startDrawFromCell(target);
+
+            try {
+                if (gridEl.setPointerCapture && activePointerId !== null) {
+                    gridEl.setPointerCapture(activePointerId);
+                }
+            } catch (err) {}
+        }
+
+        function onPointerMove(e) {
+            if (!isDrawing || e.pointerId !== activePointerId) return;
+
+            e.preventDefault();
+            const cell = getCellFromPoint(e.clientX, e.clientY);
+            if (!cell) return;
+            addToPath(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10));
+        }
+
+        function onPointerUp(e) {
+            if (activePointerId !== null && e.pointerId !== activePointerId) return;
+            finishDrawing();
+        }
+
+        function onTouchStart(e) {
+            if (isDrawing) return;
+            const touch = e.changedTouches[0];
+            const target = e.target.closest('.cell');
+            if (!touch || !target) return;
+
+            e.preventDefault();
+            startDrawFromCell(target);
+        }
+
+        function onTouchMove(e) {
+            if (!isDrawing) return;
+            const touch = e.touches[0];
+            if (!touch) return;
+
+            e.preventDefault();
+            const cell = getCellFromPoint(touch.clientX, touch.clientY);
+            if (!cell) return;
+            addToPath(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10));
+        }
+
+        function onMouseDown(e) {
+            if (e.button !== 0 || isDrawing) return;
             const target = e.target.closest('.cell');
             if (!target) return;
 
-            const r = parseInt(target.dataset.r);
-            const c = parseInt(target.dataset.c);
-            if (levels[currentLevel].map[r][c] !== 0) return;
-            isDrawing = true;
-            path = [{r, c}];
-            updateVisuals();
-
-            document.addEventListener('mousemove', onInputMove);
-            document.addEventListener('touchmove', onInputMove, {passive: false});
-            document.addEventListener('mouseup', onInputEnd);
-            document.addEventListener('touchend', onInputEnd);
+            e.preventDefault();
+            startDrawFromCell(target);
         }
 
-        function onInputMove(e) {
+        function onMouseMove(e) {
             if (!isDrawing) return;
-            if (e.type === 'touchmove') e.preventDefault();
-
-            let x, y;
-            if (e.type === 'touchmove') {
-                x = e.touches[0].clientX;
-                y = e.touches[0].clientY;
-            } else {
-                x = e.clientX;
-                y = e.clientY;
-            }
-
-            const el = document.elementFromPoint(x - window.scrollX, y - window.scrollY);
-            if (!el || !el.classList.contains('cell')) return;
-
-            const r = parseInt(el.dataset.r);
-            const c = parseInt(el.dataset.c);
-
-            addToPath(r, c);
+            const cell = getCellFromPoint(e.clientX, e.clientY);
+            if (!cell) return;
+            addToPath(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10));
         }
 
-        function onInputEnd() {
+        function finishDrawing() {
             if (!isDrawing) return;
             isDrawing = false;
-            
-            try {
-                document.removeEventListener('mousemove', onInputMove);
-                document.removeEventListener('touchmove', onInputMove);
-                document.removeEventListener('mouseup', onInputEnd);
-                document.removeEventListener('touchend', onInputEnd);
-            } catch (e) {}
-
+            activePointerId = null;
             checkWin();
         }
 
         function addToPath(r, c) {
+            if (!path.length) return;
+
             const last = path[path.length - 1];
             if (last.r === r && last.c === c) return;
 
             const dr = Math.abs(last.r - r);
             const dc = Math.abs(last.c - c);
             if (dr + dc !== 1) return;
-            
+
             const existingIndex = path.findIndex(p => p.r === r && p.c === c);
             if (existingIndex !== -1) {
                 path = path.slice(0, existingIndex + 1);
@@ -578,11 +772,13 @@
                 path = [];
                 updateVisuals();
                 gridEl.style.transform = "translateX(5px)";
-                setTimeout(() => gridEl.style.transform = "translateX(0)", 100);
+                setTimeout(() => {
+                    gridEl.style.transform = "translateX(0)";
+                }, 100);
                 return;
             }
 
-            path.push({r, c});
+            path.push({ r, c });
             updateVisuals();
         }
 
@@ -590,16 +786,18 @@
             document.querySelectorAll('.cell').forEach(cell => {
                 cell.classList.remove('path', 'eaten');
             });
+
             path.forEach((p, index) => {
                 const cell = document.querySelector(`.cell[data-r="${p.r}"][data-c="${p.c}"]`);
                 if (cell) {
                     if (index === path.length - 1) {
-                        cell.classList.add('path'); 
+                        cell.classList.add('path');
                     } else {
-                        cell.classList.add('eaten'); 
+                        cell.classList.add('eaten');
                     }
                 }
-             });
+            });
+
             updateRemaining();
         }
 
@@ -615,6 +813,7 @@
                 stopTimer();
                 const levelTime = (Date.now() - startTime) / 1000;
                 totalTime += levelTime;
+
                 if (currentLevel < levels.length - 1) {
                     document.getElementById('win-msg').textContent = `本关用时 ${levelTime.toFixed(2)}s`;
                     document.getElementById('btn-next').textContent = "下一关";
@@ -634,6 +833,8 @@
         function startTimer() {
             startTime = Date.now();
             if (timerInterval) clearInterval(timerInterval);
+
+            timerEl.textContent = '0.00s';
             timerInterval = setInterval(() => {
                 const t = (Date.now() - startTime) / 1000;
                 timerEl.textContent = t.toFixed(2) + 's';
@@ -642,122 +843,114 @@
 
         function stopTimer() {
             clearInterval(timerInterval);
+            timerInterval = null;
         }
 
         // ==========================================
-        //  云端排行榜核心逻辑修改
+        //  排行榜逻辑：云端优先，失败自动回退本地
         // ==========================================
         async function submitScore() {
             if (!playerName) playerName = '匿名玩家';
-            
-            const btnSubmit = document.getElementById('btn-submit');
-            
-            // 没连数据库，提示一下，然后只在本地模拟展示
-            if (!supabaseClient) {
-                alert("当前未连接数据库（您还没配置URL和Key），成绩将不会被全服记录哦~");
-                hideModals();
-                showPage('rank');
-                return;
-            }
 
-            btnSubmit.textContent = "上传成绩中...";
+            const btnSubmit = document.getElementById('btn-submit');
+            btnSubmit.textContent = "提交中...";
             btnSubmit.style.pointerEvents = "none";
 
+            let cloudOk = false;
+
             try {
-                const { error } = await supabaseClient
-                    .from('leaderboard')
-                    .insert([{ name: playerName, time: parseFloat(totalTime.toFixed(2)) }]);
-                
-                if (error) {
-                    alert("云端记录失败：" + error.message);
-                } else {
-                    // 提交成功后拉取最新榜单
-                    await renderRank();
-                    hideModals();
-                    showPage('rank');
-                }
+                await restInsertScore(playerName, totalTime);
+                cloudOk = true;
+                rankMode = 'cloud';
             } catch (err) {
-                alert("网络问题或配置错误，提交失败！");
+                console.warn('云端提交失败，已回退到本地排行：', err);
+                saveLocalScore(playerName, totalTime);
+                rankMode = 'local';
             } finally {
                 btnSubmit.textContent = "提交成绩";
                 btnSubmit.style.pointerEvents = "auto";
             }
+
+            await renderRank();
+
+            if (!cloudOk) {
+                alert('当前网络不稳定，成绩已先保存到本机排行榜。');
+            }
+
+            hideModals();
+            showPage('rank');
         }
 
         async function renderRank() {
             const container = document.getElementById('rank-container');
-            
-            if (!supabaseClient) {
-                container.innerHTML = '<div class="rank-item" style="justify-content: center;">未连接数据库，无法加载</div>';
-                return;
-            }
+            container.innerHTML = '<div class="rank-item" style="justify-content: center;">加载排行榜中...</div>';
 
-            container.innerHTML = '<div class="rank-item" style="justify-content: center;">拉取全服数据中...</div>';
-            
             try {
-                const { data, error } = await supabaseClient
-                    .from('leaderboard')
-                    .select('*')
-                    .order('time', { ascending: true })
-                    .limit(10);
-                
-                container.innerHTML = '';
-                
-                if (error || !data || data.length === 0) {
-                    container.innerHTML = '<div class="rank-item" style="justify-content: center;">暂无成绩记录</div>';
-                    return;
-                }
-
-                data.forEach((item, i) => {
-                    // 解析时间（如果表中没有 created_at，默认显示今天日期）
-                    let dateStr = "";
-                    if (item.created_at) {
-                        const date = new Date(item.created_at);
-                        dateStr = `${date.getMonth()+1}-${date.getDate()}`;
-                    } else {
-                        const now = new Date();
-                        dateStr = `${now.getMonth()+1}-${now.getDate()}`;
-                    }
-
-                    const div = document.createElement('div');
-                    div.className = 'rank-item';
-                    div.innerHTML = `
-                        <span>${i+1}. ${item.name} (${dateStr})</span>
-                        <span>${item.time.toFixed(2)}s</span>
-                    `;
-                    container.appendChild(div);
-                });
+                const data = await restFetchScores(10);
+                rankMode = 'cloud';
+                renderRankList(data, 'cloud');
             } catch (err) {
-                container.innerHTML = '<div class="rank-item" style="justify-content: center;">数据拉取失败</div>';
+                console.warn('云端榜单拉取失败，显示本地榜单：', err);
+                rankMode = 'local';
+                renderRankList(getLocalScores().slice(0, 10), 'local');
+            }
+        }
+
+        function bindInputEvents() {
+            if (window.PointerEvent) {
+                gridEl.addEventListener('pointerdown', onPointerDown, { passive: false });
+                gridEl.addEventListener('pointermove', onPointerMove, { passive: false });
+                window.addEventListener('pointerup', onPointerUp);
+                window.addEventListener('pointercancel', finishDrawing);
+            } else {
+                gridEl.addEventListener('touchstart', onTouchStart, { passive: false });
+                window.addEventListener('touchmove', onTouchMove, { passive: false });
+                window.addEventListener('touchend', finishDrawing);
+                window.addEventListener('touchcancel', finishDrawing);
+
+                gridEl.addEventListener('mousedown', onMouseDown);
+                window.addEventListener('mousemove', onMouseMove);
+                window.addEventListener('mouseup', finishDrawing);
             }
         }
 
         // --- 事件绑定 ---
         document.addEventListener('DOMContentLoaded', () => {
+            bindInputEvents();
+
             document.getElementById('btn-start').addEventListener('click', showNameModal);
-            
+
             document.getElementById('btn-confirm-name').addEventListener('click', () => {
                 const name = playerNameInput.value.trim();
                 if (!name) {
                     alert('请输入您的姓名！');
                     return;
                 }
+
                 playerName = name;
                 hideModals();
                 startGame();
             });
 
-            // 点击排行榜时，异步拉取数据
             document.getElementById('btn-rank').addEventListener('click', async () => {
                 showPage('rank');
                 await renderRank();
             });
-            
-            document.getElementById('btn-submit').addEventListener('click', submitScore);
-            document.getElementById('btn-back').addEventListener('click', () => showPage('home'));
-        });
 
+            document.getElementById('btn-submit').addEventListener('click', submitScore);
+            document.getElementById('btn-back').addEventListener('click', () => {
+                hideModals();
+                showPage('home');
+            });
+
+            window.addEventListener('resize', () => {
+                if (pages.game.classList.contains('active')) {
+                    renderGrid(levels[currentLevel]);
+                    updateVisuals();
+                }
+            });
+        });
     </script>
+
 </body>
 </html>
-
